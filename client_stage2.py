@@ -168,11 +168,6 @@ try:
         print('sending from {}: {}'.format(username, message_body))
         sent = udp_sock.sendto(packet, (server_address, udp_server_port))
 
-        # # ヘッダー送信
-        # udp_sock.sendall(chat_header)
-        
-        # # ボディ送信
-        # sent = udp_sock.sendto(message, (server_address, server_port))
         print('Send {} bytes'.format(sent))
     
 except Exception as e:
