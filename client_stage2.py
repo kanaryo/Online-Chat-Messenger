@@ -1,24 +1,44 @@
 import socket
 import sys
 import os
+import threading
 
 def protocol_header(filename_length, json_length, data_length):
     return filename_length.to_bytes(1, "big") + json_length.to_bytes(3,"big") + data_length.to_bytes(4,"big")
 
 #IPv4,TCPを指定してソケットを作成
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
 
 # サーバが待ち受けているポートにソケットを接続します
 server_address = input("Type in the server's address to connect to: ")
-server_port = 9001
+tcp_server_port = 9001
 
-print('connecting to {}'.format(server_address, server_port))
+print('connecting to {}'.format(server_address, tcp_server_port))
 
 try:
-    sock.connect((server_address, server_port))
+    tcp_sock.connect((server_address, tcp_server_port))
 except socket.error as err:
     print(err)
     sys.exit(1)
+    
+# === 受信用スレッド ===
+def receive_messages():
+    while True:
+        try:
+            data, server = udp_sock.recvfrom(4096)
+            usernamelen = data[0]
+            username = data[1:1+usernamelen].decode('utf-8')
+            message = data[1+usernamelen:].decode('utf-8')
+            print(f"\nFrom {username}@{server}: {message}")
+        except Exception as e:
+            print("Receive error:", e)
+            break
+
+# スレッドを起動
+recv_thread = threading.Thread(target=receive_messages, daemon=True)
+recv_thread.start()
 
 try:
     # 操作選択（1: ルーム作成, 2: ルーム参加）
@@ -49,17 +69,17 @@ try:
     )
     
     # ヘッダー送信
-    sock.sendall(header)
+    tcp_sock.sendall(header)
     
     # ボディ送信 (roomname + operation_payload)
-    sock.sendall(roomname_bytes + username_bytes)
+    tcp_sock.sendall(roomname_bytes + username_bytes)
 
     # --- サーバーからのレスポンス受信 ---
     
     # まずレスポンスヘッダーを受信（32バイト）
     resp_header = b''
     while len(resp_header) < 32:
-        chunk = sock.recv(32 - len(resp_header))
+        chunk = tcp_sock.recv(32 - len(resp_header))
         if not chunk:
             raise ConnectionError("サーバーとの接続が切断されました")
         resp_header += chunk
@@ -73,7 +93,7 @@ try:
     # レスポンスボディ受信
     resp_body = b''
     while len(resp_body) < resp_body_size:
-        chunk = sock.recv(resp_body_size - len(resp_body))
+        chunk = tcp_sock.recv(resp_body_size - len(resp_body))
         if not chunk:
             raise ConnectionError("サーバーとの接続が切断されました")
         resp_body += chunk
@@ -93,7 +113,7 @@ try:
             # 2回目のレスポンスヘッダー受信
             resp_header2 = b''
             while len(resp_header2) < 32:
-                chunk = sock.recv(32 - len(resp_header2))
+                chunk = tcp_sock.recv(32 - len(resp_header2))
                 if not chunk:
                     raise ConnectionError("サーバーとの接続が切断されました")
                 resp_header2 += chunk
@@ -104,7 +124,7 @@ try:
             # 2回目のレスポンスボディ受信（トークン）
             resp_body2 = b''
             while len(resp_body2) < resp_body_size2:
-                chunk = sock.recv(resp_body_size2 - len(resp_body2))
+                chunk = tcp_sock.recv(resp_body_size2 - len(resp_body2))
                 if not chunk:
                     raise ConnectionError("サーバーとの接続が切断されました")
                 resp_body2 += chunk
@@ -141,13 +161,18 @@ try:
             token + 
             message_bytes
         )
+        udp_server_port = 9002
+        # UDPは送信先を毎回指定する必要があるので
+        # ヘッダーとメッセージをまとめて一回で送る
+        packet = chat_header + message
         print('sending from {}: {}'.format(username, message_body))
+        sent = udp_sock.sendto(packet, (server_address, udp_server_port))
+
+        # # ヘッダー送信
+        # udp_sock.sendall(chat_header)
         
-        # ヘッダー送信
-        sock.sendall(chat_header)
-        
-        # ボディ送信
-        sent = sock.sendto(message, (server_address, server_port))
+        # # ボディ送信
+        # sent = udp_sock.sendto(message, (server_address, server_port))
         print('Send {} bytes'.format(sent))
     
 except Exception as e:
@@ -155,4 +180,4 @@ except Exception as e:
 
 finally:
     print('closing socket')
-    sock.close()
+    tcp_sock.close()
