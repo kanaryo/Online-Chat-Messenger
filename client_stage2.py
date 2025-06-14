@@ -37,7 +37,7 @@ try:
     roomname_bytes = roomname.encode('utf-8')
     username_bytes = username.encode('utf-8')
     
-    roomname_size = len(roomname_bytes)
+    roomname_size = len(roomname_bytes) #バイト列のバイト数をカウント
     operation_payload_size = len(username_bytes)
 
     #ヘッダー作成
@@ -111,6 +111,44 @@ try:
             
             token = resp_body2
             print(f"受信したトークン: {token}")
+
+    # メッセージ送信処理
+    user_name_bytes = username.encode('utf-8') #ユーザー名をバイト列に変換（UTF-8 という文字コードで文字列をエンコード（変換）)
+    usernamelen = len(user_name_bytes)  # バイト長
+    
+    while True:
+        #メッセージ本文作成
+        message_body = input("Type your message: ")
+        if message_body.lower() in ['exit', 'quit']:
+            break
+        
+        #ヘッダー作成
+        roomname_bytes = roomname.encode('utf-8')
+        
+        roomname_size = len(roomname_bytes)
+        token_size = len(token)
+        
+        chat_header = (
+            roomname_size.to_bytes(1, 'big') +
+            token_size.to_bytes(1, 'big')
+        )
+        
+        #ボディ作成
+        message_bytes = message_body.encode('utf-8') #メッセージ本文をバイト列に変換 ※ネットワーク通信では、文字列はそのまま送れない
+
+        message = (
+            roomname_bytes + 
+            token + 
+            message_bytes
+        )
+        print('sending from {}: {}'.format(username, message_body))
+        
+        # ヘッダー送信
+        sock.sendall(chat_header)
+        
+        # ボディ送信
+        sent = sock.sendto(message, (server_address, server_port))
+        print('Send {} bytes'.format(sent))
     
 except Exception as e:
     print(f"エラー: {e}")
